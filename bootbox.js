@@ -52,6 +52,12 @@
       "<button type='button' class='bootbox-close-button close' aria-hidden='true'>&times;</button>",
     form:
       "<form class='bootbox-form'></form>",
+    group:
+      "<div class='form-group'></div>",
+    label:
+      "<label class='col-sm-4 control-label'></label>",
+    inputWrapper:
+      "<div class='col-sm-8'></div>",      
     inputs: {
       text:
         "<input class='bootbox-input bootbox-input-text form-control' autocomplete=off type=text />",
@@ -363,12 +369,14 @@
     return exports.dialog(options);
   };
 
+  // change so that the prompt can have multiple input fields
   exports.prompt = function() {
     var options;
     var defaults;
     var dialog;
     var form;
     var input;
+    var inputs; // added - might merge with input
     var shouldShow;
     var inputOptions;
 
@@ -408,19 +416,43 @@
     options.buttons.cancel.callback = options.onEscape = function() {
       return options.callback.call(this, null);
     };
-
+    
     options.buttons.confirm.callback = function() {
-      var value;
+      // if there are multiple fields
+      if(options.fields){
+        var values = {};
+        each(options.fields, function(field,opts) {
+          switch (opts.type) {
+            case "text":
+            case "textarea":
+            case "email":
+            case "select":
+            case "date":
+            case "time":
+            case "number":
+            case "password":
+              values[field] = inputs[field].val();
+              break;
 
-      if (options.inputType === "checkbox") {
-        value = input.find("input:checked").map(function() {
-          return $(this).val();
-        }).get();
-      } else {
-        value = input.val();
+            case "checkbox":
+              if (options.fields[field].options) {
+                var checkedItems = inputs[field].find("input:checked");
+                values[field] = [];
+                each(checkedItems, function(_, item) {
+                  values[field].push($(item).val());
+                });
+              } else {
+                values[field] = inputs[field].find("input").is(":checked");
+              }
+              break;
+          }
+        });
+        if(typeof values['_internal_'] != "undefined"){
+          return options.callback.call(this, values['_internal_']);
+        }
+        return options.callback.call(this, values);
       }
 
-      return options.callback.call(this, value);
     };
 
     options.show = false;
@@ -438,114 +470,118 @@
       throw new Error("invalid prompt type");
     }
 
-    // create the input based on the supplied type
-    input = $(templates.inputs[options.inputType]);
+    if(!options.fields){
+      options.fields = {_internal_: {value: options.value, type: options.inputType}};
+    }
 
-    switch (options.inputType) {
-      case "text":
-      case "textarea":
-      case "email":
-      case "date":
-      case "time":
-      case "number":
-      case "password":
-        input.val(options.value);
-        break;
+    // multiple fields, build the form
+    inputs = {};
 
-      case "select":
-        var groups = {};
-        inputOptions = options.inputOptions || [];
+    each(options.fields, function(field, opts) {
+      if (!templates.inputs[opts.type]) {
+        throw new Error("invalid prompt type: " + opts.type);
+      }
 
-        if (!$.isArray(inputOptions)) {
-          throw new Error("Please pass an array of input options");
-        }
+      inputs[field] = $(templates.inputs[opts.type]);
 
-        if (!inputOptions.length) {
-          throw new Error("prompt with select requires options");
-        }
+      switch (opts.type) {
+        case "text":
+        case "textarea":
+        case "email":
+        case "date":
+        case "time":
+        case "number":
+        case "password":
+          inputs[field].val(opts.value);
+          break;
 
-        each(inputOptions, function(_, option) {
+        case "select":
+          var groups = {};
+          var inputOptions = opts.options || [];
 
-          // assume the element to attach to is the input...
-          var elem = input;
-
-          if (option.value === undefined || option.text === undefined) {
-            throw new Error("each option needs a `value` and a `text` property");
+          if (!inputOptions.length) {
+            throw new Error("select field requires options");
           }
 
-          // ... but override that element if this option sits in a group
+          each(inputOptions, function(_, option) {
 
-          if (option.group) {
-            // initialise group if necessary
-            if (!groups[option.group]) {
-              groups[option.group] = $("<optgroup/>").attr("label", option.group);
+            // assume the element to attach to is the input...
+            var elem = inputs[field];
+
+            if (option.value === undefined || option.text === undefined) {
+              throw new Error("given options in wrong format");
             }
 
-            elem = groups[option.group];
-          }
 
-          elem.append("<option value='" + option.value + "'>" + option.text + "</option>");
-        });
+            // ... but override that element if this option sits in a group
 
-        each(groups, function(_, group) {
-          input.append(group);
-        });
+            if (option.group) {
+              // initialise group if necessary
+              if (!groups[option.group]) {
+                groups[option.group] = $("<optgroup/>").attr("label", option.group);
+              }
 
-        // safe to set a select's value as per a normal input
-        input.val(options.value);
-        break;
-
-      case "checkbox":
-        var values   = $.isArray(options.value) ? options.value : [options.value];
-        inputOptions = options.inputOptions || [];
-
-        if (!inputOptions.length) {
-          throw new Error("prompt with checkbox requires options");
-        }
-
-        if (!inputOptions[0].value || !inputOptions[0].text) {
-          throw new Error("each option needs a `value` and a `text` property");
-        }
-
-        // checkboxes have to nest within a containing element, so
-        // they break the rules a bit and we end up re-assigning
-        // our 'input' element to this container instead
-        input = $("<div/>");
-
-        each(inputOptions, function(_, option) {
-          var checkbox = $(templates.inputs[options.inputType]);
-
-          checkbox.find("input").attr("value", option.value);
-          checkbox.find("label").append(option.text);
-
-          // we've ensured values is an array so we can always iterate over it
-          each(values, function(_, value) {
-            if (value === option.value) {
-              checkbox.find("input").prop("checked", true);
+              elem = groups[option.group];
             }
+
+            elem.append("<option value='" + option.value + "'>" + option.text + "</option>");
           });
 
-          input.append(checkbox);
-        });
-        break;
-    }
+          each(groups, function(_, group) {
+            inputs[field].append(group);
+          });
 
-    // @TODO provide an attributes option instead
-    // and simply map that as keys: vals
-    if (options.placeholder) {
-      input.attr("placeholder", options.placeholder);
-    }
+          // safe to set a select's value as per a normal input
+          inputs[field].val(options.value);
+          break;
 
-    if (options.pattern) {
-      input.attr("pattern", options.pattern);
-    }
+        case "checkbox":
+          var vls   = $.isArray(opts.value) ? opts.value : [opts.value];
+          inputOptions = opts.options || [{value: true, text: ' '}];
 
-    if (options.maxlength) {
-      input.attr("maxlength", options.maxlength);
-    }
+          if (!inputOptions.length) {
+            throw new Error("checkbox field requires options");
+          }
 
+          if (!inputOptions[0].value || !inputOptions[0].text) {
+            throw new Error("checkbox options given in wrong format");
+          }
+
+          inputs[field] = $("<div/>");
+
+          each(inputOptions, function(_, option) {
+            var checkbox = $(templates.inputs[opts.type]);
+
+            checkbox.find("input").attr("value", option.value);
+            checkbox.find("label").append(option.text);
+
+            // we've ensured values is an array so we can always iterate over it
+            each(vls, function(_, value) {
+              if (value === option.value) {
+                checkbox.find("input").prop("checked", true);
+              }
+            });
+
+            inputs[field].append(checkbox);
+          });
+          break;
+      }
+      
+      if (opts.placeholder) {
+        inputs[field].attr("placeholder", options.placeholder);
+      }
+    });
     // now place it in our form
-    form.append(input);
+    each(inputs, function(name, input) {
+      var group = $(templates.group);
+      var label = $(templates.label);
+      var wrapper = $(templates.inputWrapper);
+      label.html(options.fields[name].label)
+      wrapper.append(input);
+      group.append(label);
+      group.append(wrapper);
+      form.append(group);
+    });
 
     form.on("submit", function(e) {
       e.preventDefault();
@@ -565,7 +601,8 @@
     dialog.on("shown.bs.modal", function() {
       // need the closure here since input isn't
       // an object otherwise
-      input.focus();
+      if(input)
+        input.focus();
     });
 
     if (shouldShow === true) {
