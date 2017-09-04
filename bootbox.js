@@ -53,7 +53,7 @@
     form:
       "<form class='bootbox-form'></form>",
     group:
-      "<div class='form-group'></div>",
+      "<div class='form-group row'></div>",
     label:
       "<label class='col-sm-4 control-label'></label>",
     inputWrapper:
@@ -574,13 +574,17 @@
     // now place it in our form
     each(inputs, function(name, input) {
       var group = $(templates.group);
-      var label = $(templates.label);
-      var wrapper = $(templates.inputWrapper);
-      label.html(options.fields[name].label)
-      wrapper.append(input);
-      group.append(label);
-      group.append(wrapper);
-      form.append(group);
+      if(options.fields[name].label){
+        var label = $(templates.label);
+        var wrapper = $(templates.inputWrapper);
+        wrapper.append(input);
+        label.html(options.fields[name].label)
+        group.append(label);
+        group.append(wrapper);
+        form.append(group);
+      }else{
+        form.append(input);        
+      }
     });
 
     form.on("submit", function(e) {
